@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
 #define MAX_REQ 1024
 struct Response
@@ -30,7 +31,7 @@ void kill_zombie(int signal);
 int main(int argc, char *argv[])
 {
     int port = 8080;
-    char *root_path = "./webcontent";
+    char *root_path = "./resource";
     if (argc >= 2)
     {
         port = atoi(argv[1]); //第二个参数是监听端口号
@@ -40,15 +41,6 @@ int main(int argc, char *argv[])
         root_path = argv[2]; //第二个参数是虚拟根目录
     }
 
-    /*
-    struct sockaddr_in
-    {
-		sa_family_t sin_family;//地址族
-		uint16_t sin_port;//16位端口号
-		struct in_addr sin_addr;//32位IP地址
-		char sin_zero[8];//不使用
-    };
-    */
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr)); //全部置空
     addr.sin_family = AF_INET;  //地址族设置为IPv4
@@ -122,14 +114,26 @@ int main(int argc, char *argv[])
             // 如果缺少这个exit，会不会有问题？
             exit(0);
         }
-        signal(SIGCHLD,  &kill_zombie);
+        signal(SIGCHLD, &kill_zombie);
         close(clientfd);
     }
 
     return 0;
 }
+bool checkPath(char *file_path, char *root_path)
+{
+    printf("file_path:%s\n", file_path);
+    printf("root_path:%s\n", root_path);
+    int len1 = strlen(file_path);
+    int len2 = strlen(root_path);
+    if (len1 < len2)
+        return 0;
+    return !strncmp(file_path, root_path, len2);
+}
 void handle_client(char *root_path, int fd)
 {
+    struct Response *res = newResponse();
+    char *resp = NULL;
     char req[MAX_REQ];
     int req_len = 0;
     req[req_len] = '\0';
@@ -163,36 +167,52 @@ void handle_client(char *root_path, int fd)
     // 考察一下怎么防攻击：比如读到其它目录下的文件
     // 如果文件没有找到，应该怎么办？
     char *file_path = get_file_path(uri, root_path);
+    char *real_root_path = malloc(100);
+    realpath(root_path, real_root_path);
+    printf("");
+    if (!checkPath(file_path, real_root_path))
+    {
+        res->status = "403 Forbidden";
+        res->body = "<p>403 Forbidden</p>";
+        res->content_length = strlen(res->body);
+        printf("403 Forbidden\n");
+        resp = makeResponse(res);
+        write(fd, resp, strlen(resp));
+        close(fd);
+        return;
+    }
     int fileSize = file_size(file_path);
-    struct Response *res = newResponse();
+    if (fileSize < 0)
+    {
+        res->status = "404 Not Found";
+        res->body = "<p>404 Not Found</p>";
+        res->content_length = strlen(res->body);
+        printf("404 Not Found\n");
+        resp = makeResponse(res);
+        write(fd, resp, strlen(resp));
+        write(fd, res->body, res->content_length);
+        close(fd);
+        return;
+    }
     res->content_length = fileSize;
     res->body = get_file(file_path, fileSize);
     res->body[fileSize] = 0;
     res->content_type = get_mime(uri);
     printf("%s\n", res->body);
-    char *resp = makeResponse(res);
+    resp = makeResponse(res);
     int MAX_RESP = strlen(resp);
     printf("%s\n", resp);
     printf("%s\n", res->body);
     write(fd, resp, MAX_RESP);
     write(fd, res->body, fileSize);
-    // do{
-    //     int n=write(fd, resp+len, MAX_RESP-len);
-    //     //printf("%d\n",n );
-    //     len+=n;
-    // }while(n!=0);
-    // len=0;
-    // do{
-    //     int n=write(fd, res->body+len, fileSize-len);
-    //     //printf("%d\n",n );
-    //     len+=n;
-    // }while(n!=0);
     close(fd);
 }
+
 int file_size(char *filename)
 {
     struct stat statbuf;
-    stat(filename, &statbuf);
+    if (stat(filename, &statbuf) < 0)
+        return -1;
     int size = statbuf.st_size;
     return size;
 }
@@ -221,9 +241,11 @@ char *get_file_path(char *filename, char *root_path)
     char *file_path = malloc(100);
     strcpy(file_path, root_path);
     strcat(file_path, filename);
-    // printf("filename:%s\n", filename);
-    // printf("file_path:%s\n",file_path);
-    return file_path;
+    char *real_path = malloc(100);
+    realpath(file_path, real_path);
+    //printf("filename:%s\n", filename);
+    //printf("file_path:%s\n",real_path);
+    return real_path;
 }
 char *get_mime(char *uri)
 {
@@ -273,6 +295,6 @@ void kill_zombie(int signal)
 {
     pid_t pid;
     int stat;
-    while(((pid=waitpid(-1,&stat,WNOHANG)))>0)
+    while (((pid = waitpid(-1, &stat, WNOHANG))) > 0)
         printf("child %d terminated.\n", pid);
 }
