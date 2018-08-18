@@ -28,6 +28,7 @@ char *get_file_path(char *filename, char *root_path);
 char *get_mime(char *uri);
 void handle_client(char *root_path, int fd);
 void kill_zombie(int signal);
+void write_s(int,const void *,size_t);
 int main(int argc, char *argv[])
 {
     int port = 8080;
@@ -56,11 +57,11 @@ int main(int argc, char *argv[])
     addr.sin_port = htons(port);
     /*
     int socket(int domin,int type,int protocol)
-	domin:
+    domin:
     指定使用的地址族
-	type:
+    type:
     指定使用的套接字的类型:SOCK_STREAM（TCP套接字） SOCK_DGRAM（UDP套接字）
-	protocol:
+    protocol:
     如果套接字类型不是原始套接字，那么这个参数就为0，表示默认协议，SOCK_STREAM和SOCK_DGRAM对应的默认协议分别为TCP和UDP
     套接字创建成功返回套接字描述符，失败返回-1
     */
@@ -120,6 +121,20 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+void write_s(int fd,const void *str,size_t len)
+{
+    int st=0,n=0;
+    while(true){
+        n=write(fd,str+st,len-st);
+        if(st<0){
+            printf("write error");
+            return;
+        }else if(st==0){
+            return;
+        }
+        st+=n;
+    }
+}
 bool checkPath(char *file_path, char *root_path)
 {
     printf("file_path:%s\n", file_path);
@@ -159,17 +174,9 @@ void handle_client(char *root_path, int fd)
     // 获取 URI
     strtok(req, " ");
     char *uri = strtok(NULL, " ");
-
-    // printf("[%d] request_uri=%s\n", fd, uri);
-    // printf("uri:%s\n",uri );
-    // 这里只是给个Demo，直接响应"Hello World";
-    // 按要求替换成相应的文件内容，文件路径为<root_path>/<uri>
-    // 考察一下怎么防攻击：比如读到其它目录下的文件
-    // 如果文件没有找到，应该怎么办？
     char *file_path = get_file_path(uri, root_path);
     char *real_root_path = malloc(100);
     realpath(root_path, real_root_path);
-    printf("");
     if (!checkPath(file_path, real_root_path))
     {
         res->status = "403 Forbidden";
@@ -177,7 +184,8 @@ void handle_client(char *root_path, int fd)
         res->content_length = strlen(res->body);
         printf("403 Forbidden\n");
         resp = makeResponse(res);
-        write(fd, resp, strlen(resp));
+        write_s(fd, resp, strlen(resp));
+        write_s(fd, res->body, res->content_length);
         close(fd);
         return;
     }
@@ -189,8 +197,8 @@ void handle_client(char *root_path, int fd)
         res->content_length = strlen(res->body);
         printf("404 Not Found\n");
         resp = makeResponse(res);
-        write(fd, resp, strlen(resp));
-        write(fd, res->body, res->content_length);
+        write_s(fd, resp, strlen(resp));
+        write_s(fd, res->body, res->content_length);
         close(fd);
         return;
     }
@@ -203,8 +211,8 @@ void handle_client(char *root_path, int fd)
     int MAX_RESP = strlen(resp);
     printf("%s\n", resp);
     printf("%s\n", res->body);
-    write(fd, resp, MAX_RESP);
-    write(fd, res->body, fileSize);
+    write_s(fd, resp, MAX_RESP);
+    write_s(fd, res->body, fileSize);
     close(fd);
 }
 
