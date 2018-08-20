@@ -29,6 +29,8 @@ char *get_mime(char *uri);
 void handle_client(char *root_path, int fd);
 void kill_zombie(int signal);
 void write_s(int,const void *,size_t);
+bool checkPath(char *file_path, char *root_path);
+
 int main(int argc, char *argv[])
 {
     int port = 8080;
@@ -45,8 +47,6 @@ int main(int argc, char *argv[])
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr)); //全部置空
     addr.sin_family = AF_INET;  //地址族设置为IPv4
-    // 理解一下 htonl 和 htons 是干什么的
-    // INADDR_ANY 表示什么？
     //TCP/IP规定的网络字节序是大端
     //一般计算机内存是小端
     //INADDR_ANY相当于inet_addr("0.0.0.0")，即本机所有网卡
@@ -95,9 +95,6 @@ int main(int argc, char *argv[])
     //如果accept成功，那么其返回值是由内核自动生成的一个全新描述符，代表与客户端的TCP连接。
     while ((clientfd = accept(listenfd, NULL, NULL)) >= 0)
     {
-        // 如何获取客户端 IP:PORT
-        //printf("Client connected: %d\n", clientfd);
-        // 理解一下fork
         // 从当前位置创建子进程处理连接
         ret = fork();
         //printf("ret=%d\n",ret);
@@ -112,39 +109,14 @@ int main(int argc, char *argv[])
             close(listenfd);
             //在子进程中处理请求
             handle_client(root_path, clientfd);
-            // 如果缺少这个exit，会不会有问题？
             exit(0);
         }
         signal(SIGCHLD, &kill_zombie);
         close(clientfd);
     }
-
     return 0;
 }
-void write_s(int fd,const void *str,size_t len)
-{
-    int st=0,n=0;
-    while(true){
-        n=write(fd,str+st,len-st);
-        if(st<0){
-            printf("write error");
-            return;
-        }else if(st==0){
-            return;
-        }
-        st+=n;
-    }
-}
-bool checkPath(char *file_path, char *root_path)
-{
-    printf("file_path:%s\n", file_path);
-    printf("root_path:%s\n", root_path);
-    int len1 = strlen(file_path);
-    int len2 = strlen(root_path);
-    if (len1 < len2)
-        return 0;
-    return !strncmp(file_path, root_path, len2);
-}
+
 void handle_client(char *root_path, int fd)
 {
     struct Response *res = newResponse();
@@ -153,7 +125,6 @@ void handle_client(char *root_path, int fd)
     int req_len = 0;
     req[req_len] = '\0';
     int n = 0;
-    // 为什么需要一个循环来读取
     while (strstr(req, "\r\n\r\n") == NULL)
     {
         n = read(fd, req + req_len, MAX_REQ - req_len);
@@ -206,14 +177,40 @@ void handle_client(char *root_path, int fd)
     res->body = get_file(file_path, fileSize);
     res->body[fileSize] = 0;
     res->content_type = get_mime(uri);
-    printf("%s\n", res->body);
+    //printf("%s\n", res->body);
     resp = makeResponse(res);
     int MAX_RESP = strlen(resp);
-    printf("%s\n", resp);
-    printf("%s\n", res->body);
+    //printf("%s\n", resp);
+    //printf("%s\n", res->body);
     write_s(fd, resp, MAX_RESP);
     write_s(fd, res->body, fileSize);
     close(fd);
+}
+
+void write_s(int fd,const void *str,size_t len)
+{
+    int st=0,n=0;
+    while(true){
+        n=write(fd,str+st,len-st);
+        if(st<0){
+            printf("write error");
+            return;
+        }else if(st==0){
+            return;
+        }
+        st+=n;
+    }
+}
+
+bool checkPath(char *file_path, char *root_path)
+{
+    //printf("file_path:%s\n", file_path);
+    //printf("root_path:%s\n", root_path);
+    int len1 = strlen(file_path);
+    int len2 = strlen(root_path);
+    if (len1 < len2)
+        return 0;
+    return !strncmp(file_path, root_path, len2);
 }
 
 int file_size(char *filename)
@@ -236,7 +233,7 @@ char *get_file(char *file_path, int fileSize)
     }
     else
     {
-        printf("%s FILE is exist,size=%d\n", file_path, fileSize);
+        //printf("%s FILE is exist,size=%d\n", file_path, fileSize);
         buf = malloc(fileSize);
         int fer = fread(buf, fileSize, 1, fp);
         printf("fread:%d\n", fer);
@@ -244,6 +241,7 @@ char *get_file(char *file_path, int fileSize)
     fclose(fp);
     return buf;
 }
+
 char *get_file_path(char *filename, char *root_path)
 {
     char *file_path = malloc(100);
@@ -255,6 +253,7 @@ char *get_file_path(char *filename, char *root_path)
     //printf("file_path:%s\n",real_path);
     return real_path;
 }
+
 char *get_mime(char *uri)
 {
     int len = strlen(uri);
@@ -281,7 +280,7 @@ char *get_mime(char *uri)
 
 char *makeResponse(struct Response *res)
 {
-    char *resp = malloc(1024 + res->content_length);
+    char *resp = malloc(MAX_REQ + res->content_length);
     sprintf(resp, "%s %s\r\n", res->protocol, res->status);
     sprintf(resp + strlen(resp), "Content-Length: %d\r\n", res->content_length);
     sprintf(resp + strlen(resp), "Content-Type: %s\r\n", res->content_type);
@@ -289,6 +288,7 @@ char *makeResponse(struct Response *res)
     sprintf(resp + strlen(resp), "\r\n");
     return resp;
 }
+
 struct Response *newResponse()
 {
     struct Response *res = malloc(sizeof(struct Response));
@@ -299,6 +299,7 @@ struct Response *newResponse()
     res->body = NULL;
     return res;
 }
+
 void kill_zombie(int signal)
 {
     pid_t pid;
