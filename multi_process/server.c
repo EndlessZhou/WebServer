@@ -28,7 +28,7 @@ char *get_file_path(char *filename, char *root_path);
 char *get_mime(char *uri);
 void handle_client(char *root_path, int fd);
 void kill_zombie(int signal);
-void write_s(int,const void *,size_t);
+void write_s(int, const void *, size_t);
 bool checkPath(char *file_path, char *root_path);
 
 int main(int argc, char *argv[])
@@ -37,22 +37,22 @@ int main(int argc, char *argv[])
     char *root_path = "./resource";
     if (argc >= 2)
     {
-        port = atoi(argv[1]); //第二个参数是监听端口号
+        port = atoi(argv[1]); // 第二个参数是监听端口号
     }
     if (argc == 3)
     {
-        root_path = argv[2]; //第二个参数是虚拟根目录
+        root_path = argv[2]; // 第二个参数是虚拟根目录
     }
 
     struct sockaddr_in addr;
-    bzero(&addr, sizeof(addr)); //全部置空
-    addr.sin_family = AF_INET;  //地址族设置为IPv4
-    //TCP/IP规定的网络字节序是大端
-    //一般计算机内存是小端
-    //INADDR_ANY相当于inet_addr("0.0.0.0")，即本机所有网卡
-    //inet_addr()的功能是将一个点分十进制的IP转换成一个无符号32位整数型数
-    //htonl()返回以网络字节序表示的32位整数
-    //htons()返回以网络字节序表示的16位整数
+    bzero(&addr, sizeof(addr)); // 全部置空
+    addr.sin_family = AF_INET;  // 地址族设置为IPv4
+    // TCP/IP规定的网络字节序是大端
+    // 一般计算机内存是小端
+    // INADDR_ANY相当于inet_addr("0.0.0.0")，即本机所有网卡
+    // inet_addr()的功能是将一个点分十进制的IP转换成一个无符号32位整数型数
+    // htonl()返回以网络字节序表示的32位整数
+    // htons()返回以网络字节序表示的16位整数
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(port);
     /*
@@ -66,21 +66,23 @@ int main(int argc, char *argv[])
     套接字创建成功返回套接字描述符，失败返回-1
     */
     int listenfd = socket(AF_INET, SOCK_STREAM, 0);
-    //检查是否创建套接字失败
+    // 检查是否创建套接字失败
     if (listenfd < 0)
     {
         perror("socket");
         exit(-1);
     }
-    //将套接字绑定到addr（IP/端口号）
-    //三个参数分别为套接字、通用套接字地址、地址所占空间
+
+    // 将套接字绑定到addr（IP/端口号）
+    // 三个参数分别为套接字、通用套接字地址、地址所占空间
     if (bind(listenfd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
         perror("bind");
         exit(-1);
     }
-    //listen把一个未连接的套接字转换成一个被动套接字
-    //第一个参数是套接字，第二个参数是连接队列总大小
+
+    // listen把一个未连接的套接字转换成一个被动套接字
+    // 第一个参数是套接字，第二个参数是连接队列总大小
     if (listen(listenfd, 5) < 0)
     {
         perror("listen");
@@ -89,25 +91,26 @@ int main(int argc, char *argv[])
 
     int clientfd = -1;
     int ret = 0;
-    //int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-    //从已完成队列队头返回下一个已完成连接
-    //若成功则为非负描述符，若出错则为-1
-    //如果accept成功，那么其返回值是由内核自动生成的一个全新描述符，代表与客户端的TCP连接。
+
+    // int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+    // 从已完成队列队头返回下一个已完成连接
+    // 若成功则为非负描述符，若出错则为-1
+    // 如果accept成功，那么其返回值是由内核自动生成的一个全新描述符，代表与客户端的TCP连接。
     while ((clientfd = accept(listenfd, NULL, NULL)) >= 0)
     {
         // 从当前位置创建子进程处理连接
         ret = fork();
-        //printf("ret=%d\n",ret);
+        // printf("ret=%d\n",ret);
         if (ret < 0)
         {
             perror("fork");
             exit(-1);
         }
-        //ret==0说明当前进程为子进程
+        // ret==0说明当前进程为子进程
         if (ret == 0)
         {
             close(listenfd);
-            //在子进程中处理请求
+            // 在子进程中处理请求
             handle_client(root_path, clientfd);
             exit(0);
         }
@@ -142,12 +145,13 @@ void handle_client(char *root_path, int fd)
         req[req_len] = '\0';
     }
 
-    // 获取 URI
+    //  获取 URI
     strtok(req, " ");
     char *uri = strtok(NULL, " ");
     char *file_path = get_file_path(uri, root_path);
     char *real_root_path = malloc(100);
     realpath(root_path, real_root_path);
+
     if (!checkPath(file_path, real_root_path))
     {
         res->status = "403 Forbidden";
@@ -160,6 +164,7 @@ void handle_client(char *root_path, int fd)
         close(fd);
         return;
     }
+
     int fileSize = file_size(file_path);
     if (fileSize < 0)
     {
@@ -173,39 +178,46 @@ void handle_client(char *root_path, int fd)
         close(fd);
         return;
     }
+
     res->content_length = fileSize;
     res->body = get_file(file_path, fileSize);
     res->body[fileSize] = 0;
     res->content_type = get_mime(uri);
-    //printf("%s\n", res->body);
+    // printf("%s\n", res->body);
     resp = makeResponse(res);
     int MAX_RESP = strlen(resp);
-    //printf("%s\n", resp);
-    //printf("%s\n", res->body);
+    // printf("%s\n", resp);
+    // printf("%s\n", res->body);
     write_s(fd, resp, MAX_RESP);
     write_s(fd, res->body, fileSize);
     close(fd);
 }
 
-void write_s(int fd,const void *str,size_t len)
+// 循环写入
+void write_s(int fd, const void *str, size_t len)
 {
-    int st=0,n=0;
-    while(true){
-        n=write(fd,str+st,len-st);
-        if(st<0){
+    int st = 0, n = 0;
+    while (true)
+    {
+        n = write(fd, str + st, len - st);
+        if (st < 0)
+        {
             printf("write error");
             return;
-        }else if(st==0){
+        }
+        else if (st == 0)
+        {
             return;
         }
-        st+=n;
+        st += n;
     }
 }
 
+// 路径校验
 bool checkPath(char *file_path, char *root_path)
 {
-    //printf("file_path:%s\n", file_path);
-    //printf("root_path:%s\n", root_path);
+    // printf("file_path:%s\n", file_path);
+    // printf("root_path:%s\n", root_path);
     int len1 = strlen(file_path);
     int len2 = strlen(root_path);
     if (len1 < len2)
@@ -213,6 +225,7 @@ bool checkPath(char *file_path, char *root_path)
     return !strncmp(file_path, root_path, len2);
 }
 
+// 获取文件大小
 int file_size(char *filename)
 {
     struct stat statbuf;
@@ -222,6 +235,7 @@ int file_size(char *filename)
     return size;
 }
 
+// 获取文件内容
 char *get_file(char *file_path, int fileSize)
 {
     char *buf = NULL;
@@ -233,7 +247,7 @@ char *get_file(char *file_path, int fileSize)
     }
     else
     {
-        //printf("%s FILE is exist,size=%d\n", file_path, fileSize);
+        // printf("%s FILE is exist,size=%d\n", file_path, fileSize);
         buf = malloc(fileSize);
         int fer = fread(buf, fileSize, 1, fp);
         printf("fread:%d\n", fer);
@@ -242,6 +256,7 @@ char *get_file(char *file_path, int fileSize)
     return buf;
 }
 
+// 获取文件路径
 char *get_file_path(char *filename, char *root_path)
 {
     char *file_path = malloc(100);
@@ -249,11 +264,12 @@ char *get_file_path(char *filename, char *root_path)
     strcat(file_path, filename);
     char *real_path = malloc(100);
     realpath(file_path, real_path);
-    //printf("filename:%s\n", filename);
-    //printf("file_path:%s\n",real_path);
+    // printf("filename:%s\n", filename);
+    // printf("file_path:%s\n",real_path);
     return real_path;
 }
 
+// 获取文件类型
 char *get_mime(char *uri)
 {
     int len = strlen(uri);
@@ -278,6 +294,7 @@ char *get_mime(char *uri)
     return "text/html";
 }
 
+// 生成响应头
 char *makeResponse(struct Response *res)
 {
     char *resp = malloc(MAX_REQ + res->content_length);
@@ -289,6 +306,7 @@ char *makeResponse(struct Response *res)
     return resp;
 }
 
+// 初始化响应结构体
 struct Response *newResponse()
 {
     struct Response *res = malloc(sizeof(struct Response));
@@ -300,6 +318,7 @@ struct Response *newResponse()
     return res;
 }
 
+// 处理僵尸进程
 void kill_zombie(int signal)
 {
     pid_t pid;
